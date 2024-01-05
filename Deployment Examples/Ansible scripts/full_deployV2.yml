@@ -1,0 +1,246 @@
+---
+# Alex Nasca 
+# 1/3/2024
+# CDT intermediate infrastructure Deployment and configuration Script
+
+# This script will deploy three networks connected by one router with an external gateway to the internet. 
+# Three machiones will be deployed on one network, two machines will be deployed on the cloud network, 
+# and one machine will be made on the redteam network.
+#
+# To run the code you should have a deployment box on a seperate network that is already connected to the internet.
+# Ensure that ansible and the openstack CLI is installed and be sure to source into the openstack cli 
+
+
+#Task 1: download necessary package for openstack deployment
+- name: Install openstack.cloud collection
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Install openstack.cloud collection
+      ansible.builtin.shell:
+        cmd: "ansible-galaxy collection install openstack.cloud"
+
+# Task 2: set global variables (CHANGE AS NEEDED)
+- name: create openstack environment 
+  hosts: localhost 
+  gather_facts: no
+  vars:
+    server_image: UbuntuJammy2204-Desktop #OS type 
+    server_flavor: medium #size of resources being used  
+    network_name: arn_blue1_network #network one name 
+    subnet_name: arn_blue1_subnet #network subnet name 
+    cloud_network_name: arn_cloud_network #network two name (simulated cloud env)
+    cloud_subnet_name: arn_cloud_subnet #network two subnet name 
+    redteam_network_name: arn_red_network #redteam network name 
+    redteam_subnet_name: arn_red_subnet #redteam network subnet name 
+    redteam_subnet_cidr: 10.10.2.0/24 #redteam ip range, 254 ips available 
+    subnet1_cidr: 10.10.0.0/24 #network one ip range, 254 ips available 
+    cloud_subnet_cidr: 10.10.1.0/24 #cloud network ip range, 254 ips available 
+    volume_size: 100 #size of disk on each machine in Gigibytes 
+    key_name: Demo-Key # CHANGE THIS TO NAME OF SSH KEY YOU GENERATE ON DEPLOYMENT BOX
+    security_groups_id: ae8d5e2a-a576-4099-87a2-079f7472be87 # CHANGE THIS to match the id assocoated with the defualt security group in your env
+    auto_ip: no # we will be manually assigning ips for reproducibility 
+    router_name: arn_test_router #name of router 
+    static_ips: #names and ips of each machine 
+      apache: 10.10.0.10 
+      mysql: 10.10.0.11
+      vsftpd: 10.10.0.12
+      AD: 10.10.1.10
+      nginx: 10.10.1.11
+      kali: 10.10.2.10
+
+
+  #  Task 3: create networks and routers   
+  tasks: 
+    - name: Create blue1 network 
+      os_network:
+        name: "{{ network_name }}" #how to access a global variable from above 
+        state: present
+      register: create_network_result #cache the information about the network for future use 
+
+    - name: Create blue1 subnet 
+      os_subnet:
+        state: present
+        network_name: "{{ network_name }}"
+        name: "{{ subnet_name }}"
+        cidr: "{{ subnet1_cidr }}"
+
+    - name: Create blue_cloud_network 
+      os_network:
+        name: "{{ cloud_network_name }}"
+        state: present
+      register: create_cloud_network_result #cache the information about the network for future use 
+
+    - name: Create blue_cloud_subnet  
+      os_subnet:
+        state: present
+        network_name: "{{ cloud_network_name }}"
+        name: "{{ cloud_subnet_name }}"
+        cidr: "{{ cloud_subnet_cidr }}"
+
+    - name: Create red network 
+      os_network:
+        name: "{{ redteam_network_name }}"
+        state: present
+      register: create_red_network_result #cache the information about the network for future use 
+
+    - name: Create red subnet
+      os_subnet:
+        state: present
+        network_name: "{{ redteam_network_name }}"
+        name: "{{ redteam_subnet_name }}"
+        cidr: "{{ redteam_subnet_cidr }}"
+
+    - name: Create router
+      os_router:
+        state: present
+        name: "{{ router_name }}"
+        external_gateway_info: #external gateway is a port the router is built upon. 
+          network: "external249" #external 249 is the open internet 
+        interfaces: #used to set other interfaces on the router for internal routing between the networks we just created 
+          - net: "arn_blue1_network"  # connect network one 
+            subnet: "arn_blue1_subnet" # connect the subnet, default gateway by default will be 10.10.0.1
+          - net: "arn_test_net"  # CHANGE THIS: The network my DEPLOYMENT MACHINE (Whichever box this script is being run on) is connected to (need to connect for further config after machines are up)
+            subnet: "arn_subnet1"
+            portip: "192.168.0.254" #since my deployment net already has a router with 192.168.0.1, I am manually setting the new router to .254 so they don't overlap
+          - net: "arn_red_network" #connect red network 
+            subnet: "arn_red_subnet"
+          - net: "arn_cloud_network" #connect cloud network 
+            subnet: "arn_cloud_subnet"
+
+    - name: Set default gateway # this step is needed on my deployment network to allow my deployment machine talk to the new network I connected it to 
+      become: true #become root 
+      command: ip route del default #delete the default ip route pointing to the original router at 192.168.0.1
+      ignore_errors: yes
+
+    - name: Add default gateway #add new default gateway to the new 192.168.0.254 router gateway 
+      become: true
+      command: ip route add default via 192.168.0.254
+
+    - name: Get blue1 network ID # obtaining network 1 id we cached earlier 
+      set_fact:
+        blue1_network_id: "{{ create_network_result.id }}"
+    
+    - name: Get cloud network ID # obtaining cloud id we cached earlier 
+      set_fact:
+        cloud_network_id: "{{ create_cloud_network_result.id }}"
+    
+    - name: Get red network ID # obtaining red network id we cached earlier 
+      set_fact:
+        red_network_id: "{{ create_red_network_result.id }}"
+
+
+    # Task 4: create machines 
+    - name: Create blue1 servers #creating first three machines on network 1 (they will all have the same default specs)
+      # the following is the actual command you would type into the cli but it utilizes the variables set above 
+      command: >
+        openstack server create
+        --flavor {{ server_flavor }}
+        --image {{ server_image }}
+        --boot-from-volume {{ volume_size }}
+        --nic net-id={{ blue1_network_id }},v4-fixed-ip="{{ static_ips[item] }}" 
+        --key-name {{ key_name }}
+        {{ item }}
+      loop: # the item variable in the command above are the names in the loop below which we used earlier to set ip addresses 
+        - apache
+        - mysql
+        - vsftpd
+      ignore_errors: yes # will continue running if any of the deployments fail 
+
+    - name: Create cloud AD server # need a different command to deploy an AD 
+      # when you are not looping through variables, instead of accessing values like "static_ips[item]" you must access it like "static_ips.AD"
+      command: >
+        openstack server create
+        --flavor {{ server_flavor }}
+        --image WinSrv2019-17763-2022
+        --boot-from-volume {{ volume_size }}
+        --nic net-id={{ cloud_network_id }},v4-fixed-ip="{{ static_ips.AD }}"
+        --key-name {{ key_name }}
+        cloud_AD
+      ignore_errors: yes
+
+    - name: Create cloud Nginx server #create another machine on the cloud 
+      command: >
+        openstack server create
+        --flavor {{ server_flavor }}
+        --image {{ server_image }}
+        --boot-from-volume 100
+        --nic net-id={{ cloud_network_id }},v4-fixed-ip="{{ static_ips.nginx }}"
+        --key-name {{ key_name }}
+        cloud_nginx
+      ignore_errors: yes
+
+    - name: Create redteam kali box #create one redteam box on the redteams network  
+      command: >
+        openstack server create
+        --flavor {{ server_flavor }}
+        --image Kali-2023.1 
+        --boot-from-volume {{ volume_size }}
+        --nic net-id={{ red_network_id }},v4-fixed-ip="{{ static_ips.kali }}"
+        --key-name {{ key_name }}
+        redteam
+      ignore_errors: yes
+
+    - name: pause for one minute #gives all the machines time to fully spin up before we begin configurating them 
+      pause: 
+        seconds: 60
+
+
+# Task 5: configure machines 
+- name: Install and configure services 
+  hosts: linux # only run on linux machines specified in my inventory file 
+  become: true  # Run tasks with sudo privileges
+
+  tasks:
+    - name: Update APT
+      apt:
+        update_cache: yes
+
+    - name: Install Apache2 on 10.10.0.10
+      apt:
+        name: apache2 #installs apache2 using apt 
+      when: "'10.10.0.10' in inventory_hostname" #only runs when ip matches in the inventory file 
+
+    - name: Install MySQL on 10.10.0.11
+      apt:
+        name: mysql-server #installs sql server (can log in as root with no password by defualt)
+      when: "'10.10.0.11' in inventory_hostname"
+
+    - name: Install vsftpd on 10.10.0.12
+      apt:
+        name: vsftpd #installs an FTP service called vsftpd
+      when: "'10.10.0.12' in inventory_hostname"
+    
+    - name: Install nginx on 10.10.1.11
+      apt:
+        name: nginx #installs enginx on cloud box 
+      when: "'10.10.1.11' in inventory_hostname"
+
+- name: Add users to blue boxes
+  hosts: blue #only runs on blue team machines (blue 1 and cloud networks) specified in inventory file 
+  become: true  # Run tasks with sudo privileges
+
+  tasks:
+    - name: Create TestUser1
+      user:
+        name: TestUser1 #name of new user 
+        password: "{{ 'password' | password_hash('sha512') }}" # has to hash password to place into shadow file correctly
+        shell: /bin/bash #sets the shell for the user on login 
+      ignore_errors: yes  # Ignore errors if the user already exists
+
+    - name: Create TestSudo1
+      user:
+        name: TestSudo1 #name of new user 
+        password: "{{ 'password' | password_hash('sha512') }}" # has to hash password to place into shadow file correctly
+        shell: /bin/bash #sets the shell for the user on login 
+      ignore_errors: yes  # Ignore errors if the user already exists
+
+    - name: Add TestSudo1 to sudoers group
+      user:
+        name: TestSudo1 #username set above
+        groups: sudo #add to sudo group 
+        shell: /bin/bash 
+      ignore_errors: yes  
+
+  # can expand configurations as needed to also include the AD 
