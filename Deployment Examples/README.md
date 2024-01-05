@@ -17,7 +17,7 @@ This repository contains bash scripts and ansible scripts that interface with Op
 	- copy the contents of `~/.ssh/id_rsa.pub` to your computers clipboard *(must be done through ssh. Copy won't work on GUI console interface)*
 - Go to the Openstack web interface:
 	- navigate to Compute -> Key Pairs
-	- click on Import Public Key 
+	- click on "Import Public Key" 
 	- name the key (for the following examples it is called Demo_Key) 
 	- for "Key Type" select  "SSH Key"
 	- paste the id_rsa.pub contents into the box
@@ -32,7 +32,7 @@ This repository contains bash scripts and ansible scripts that interface with Op
 
 ### **1) network_create.sh** 
 
-This Bash script can be used to quickly deploy a network as well as a router that will have internet access through the external gateway. This is useful if you would like to start creating instances on a network other than MAIN-NAT. Make sure to change the code accordingly for your needs. The `--project` option should match your project name. All other option values are up to your discretion  and can be left as is. Ensure that if an option is changed in one spot, it is reflected throughout the code. For example if you change the name of the network in the network create but not when attempting to connect the router, the code will fail.
+This Bash script can be used to quickly deploy a network as well as a router that will have internet access through the external gateway. This is useful if you would like to start creating instances on a network other than MAIN-NAT. Make sure to change the code accordingly for your needs. The `--project` option should match your project name. All other option values are up to your discretion  and can be left as is. Ensure that if an option is changed in one spot, it is reflected through out the code. For example if you change the name of the network in the network create but not when attempting to connect the router, the code will fail.
 
 To Run:
 `./network_create.sh`
@@ -110,7 +110,7 @@ To run:
 - Ensure the control node is connected to the same network as the instances you want to configure.
 	- This can be accomplished by adding an interface to the desired network from the OpenStack Web Interface. Navigate to Compute -> Instances.
  	- Click on the down arrow on the right side of the screen next to "Create Snapshot" for the desired instance. Click "Attach Interface".
-  	- Click on the dropdown under "Network*" and select the desired network you want to connect to. Click "Attach Interface on the bottom right
+  	- Click on the dropdown under "Network*" and select the desired network you want to connect to. Click "Attach Interface" on the bottom right
 - Ensure your deployment machine is not connected to MAIN-NAT
 	- If connected to MAIN-NAT, follow the same process as attaching an interface but select "Detach Interface" instead of "Attach Interface".
  	- From the dropdown select the ip address associated with MAIN-NAT (should be a 100.64.x.x/16 address). Click "Detach Interface" on the bottom right.  	
