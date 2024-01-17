@@ -101,46 +101,11 @@ To run:
 
 &nbsp;
 
-## **2) full_deployV2.yml**
+## **2) Deploy_Instances.yml**
 ### Additional Setup 
 - Install Ansible on your control node: `sudo apt install ansible -y`
-- create an additional network with a router connected to external249
-	- this will be considered the 'greyteam network' (called demo network in the example)
- 	- this can easily be accomplished by running "network_create.sh" 	
-- Ensure the control node is connected to the same network as the instances you want to configure.
-	- This can be accomplished by adding an interface to the desired network from the OpenStack Web Interface. Navigate to Compute -> Instances.
- 	- Click on the down arrow on the right side of the screen next to "Create Snapshot" for the desired instance. Click "Attach Interface".
-  	- Click on the dropdown under "Network*" and select the desired network you want to connect to. Click "Attach Interface" on the bottom right
-- Ensure your deployment machine is not connected to MAIN-NAT
-	- If connected to MAIN-NAT, follow the same process as attaching an interface but select "Detach Interface" instead of "Attach Interface".
- 	- From the dropdown select the ip address associated with MAIN-NAT (should be a 100.64.x.x/16 address). Click "Detach Interface" on the bottom right.  	
-- ensure the default gateway of the router on your deployment box is x.x.x.1 (should be by default)
-- open a terminal and ping 8.8.8.8 to ensure your deployment box has internet connection
-- ensure that full_deploy_inventory.ini is downloaded
+  
+This ansible playbook is used to deploy instances into a project and connect them to a created network with internet access. This script will create one instance, create a router with internet access, create a network with a subnet, and then connect them together.
 
-This ansible playbook is an intermediate playbook that demonstrates the potential of Ansible in the openstack environment. This playbook creates three networks, a router, and 6 instances. It organizes and connects these instances and routes your deployment machine to the new network. From here the playbook does a similar configuration to basic_setup.yml above. By the end of this script you should have a blue1 network with three scored instances, a cloud network with one scored instance and a Windows AD instance, and finally a red team network with one kali instance for attacking. This is a smaller scale than is expected for a CDT competition, however it demonstrates the speed and reproducibility that can be achieved using ansible. Further configurations are expected. While they can be done manually, you can completely automate most processes with ansible on the scale necessary for CDT.
-
-**NOTE: The code must be changed for successful execution as many variables are specific to your environment. The code is commented thoroughly for this purpose as they specify where changes must be made through out the code.** 
-
-to run:
-`ansible-playbook -i full_deploy_inventory.ini full_deployV2.yml`
-
-**Network diagram before playbook execution:**
-
-![before](screenshots/before.png)
-
-**Network diagram after playbook execution:**
-
-![after](screenshots/after.png)
-
-&nbsp;
-
-# General Issues
-- Deployments may fail if you do not have enough resources allotted in your project.
-- Every time you log out or end your shell session, you will have to source into the openstack rc file when you try to use openstack commands again.
-- Ensure that machines do not share ip addresses with each other between networks
-- To configure windows machines with ansible you must adjust the openstack server create command and add `--user-data openstack-cloudint.yml`. 
-	- This yaml file can be found at [prepare-for-ansible-windows](https://github.com/RIT-GCI-CyberRange/Openstack-Guides/blob/main/ansible-guides/prepare-for-ansible-windows)
-	- It will configure Windows to accept ansible connections and create the user `ansible` with the password `ansible`.
-	- this username and password should then be specified either in the inventory file or playbook itself to allow you to use ansible to further configure the windows machine
----
+To run:
+`ansible-playbook Deploy_instances.yml `
