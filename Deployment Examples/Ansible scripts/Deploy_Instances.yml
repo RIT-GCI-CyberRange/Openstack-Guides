@@ -1,0 +1,76 @@
+---
+# Alex Nasca 
+# 1/17/2024
+# CDT simple infrastructure Deployment and configuration Script
+
+# This script will deploy one network connected by one router with an external gateway to the internet. 
+# one machine will be deployed on the network.
+#
+# To run the code you should have a deployment box on a seperate network that is already connected to the internet.
+# Ensure that ansible and the openstack CLI is installed and be sure to source into the openstack cli 
+
+
+#Task 1: download necessary package for openstack deployment
+- name: Install openstack.cloud collection
+  hosts: localhost
+  gather_facts: no
+  become: true
+
+  tasks:
+    - name: Install openstack.cloud collection
+      ansible.builtin.shell:
+        cmd: "ansible-galaxy collection install openstack.cloud"
+
+
+#  Task 2: create networks and routers   
+- name: create network and router
+  hosts: localhost 
+  gather_facts: no
+  tasks: 
+    - name: Create network 
+      os_network:
+        name: "arn_instanceDeploy_network" #how to access a global variable from above 
+        state: present
+      register: create_network_result #cache the information about the network for future use 
+
+    - name: Create network subnet 
+      os_subnet:
+        state: present
+        network_name: "arn_instanceDeploy_network"
+        name: "arn_instanceDeploy_network_subnet"
+        cidr: 192.168.0.1/24 #ip range in this network
+
+
+    - name: Create router
+      os_router:
+        state: present
+        name: "arn_instance_deploy_router"
+        external_gateway_info: #external gateway is a port the router is built upon. 
+          network: "external249" #external 249 is the open internet 
+        interfaces: #used to set other interfaces on the router for internal routing between the networks we just created 
+          - net: "arn_instanceDeploy_network"  # connect network one 
+            subnet: "arn_instanceDeploy_network_subnet" # connect the subnet, default gateway by default will be 191.168.0.1
+
+
+    - name: Get network ID # obtaining network id we cached earlier 
+      set_fact:
+        network_id: "{{ create_network_result.id }}" #USED BELOW IN BRACKETS {{ network_id }}
+
+
+# Task 3: create instance and connect to network
+- name: Install openstack.cloud collection
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Create instance of Ubuntu Jammy Desktop 
+    #will simply use the cli command rather than the module because the module is buggy
+      command: >
+        openstack server create
+        --flavor small
+        --image UbuntuJammy2204-Desktop
+        --boot-from-volume 100
+        --nic net-id={{ network_id }},v4-fixed-ip="192.168.0.10"
+        --key-name Demo-Key
+        Instance1
+      ignore_errors: yes
