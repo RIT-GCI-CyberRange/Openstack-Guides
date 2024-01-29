@@ -91,7 +91,7 @@
   hosts: localhost
   gather_facts: no
 
-  tasks:
+  tasks: #CHANGE TO MATCH YOUR INFRASTRUCTURE (image, key, etc)
     - name: Create pfSense instance 
       command: >
         openstack server create
