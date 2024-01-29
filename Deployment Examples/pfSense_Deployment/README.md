@@ -85,10 +85,11 @@ By default, all internal traffic will be NATed using the WAN IP.
 ## Common Problems 
 
 1) Error: 
-```
+`
 Missing value auth-url required for auth plugin password
-```
-- Source into the Openstack .rc file for that project
+`
+
+    - Source into the Openstack .rc file for that project
 
 
 2) LAN can't ping the internet but everything else can
