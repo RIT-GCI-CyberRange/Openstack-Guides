@@ -1,6 +1,6 @@
 # README
 
-This README provides instructions for setting up and configuring a pfSense routed network using the `pfsense_network.yml` Ansible script. It also covers additional required pfsense configurations for a wide open network with full routing and internet connection. This script is specifically for use with OpenStack environments.
+This README provides instructions for setting up and configuring a pfSense routed network using the `pfsense_network.yml` Ansible script. It also covers additional required pfsense configurations for a wide open network with full routing and internet connection. This script is specifically for use with OpenStack environments. Using this method, port security in the environment will be disabled. This will allow for IP and MAC spoofing to be conducted in the environment.
 
 ## Requirements
 - A deployment box with internet access on a custom network (will be isolated from created network after deployment)
