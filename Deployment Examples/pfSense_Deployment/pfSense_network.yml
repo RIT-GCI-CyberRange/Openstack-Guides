@@ -1,0 +1,268 @@
+#Alex Nasca 
+#Ansible script to set up network with PFsense 
+
+#Play 1: download necessary package for openstack deployment
+- name: Install openstack.cloud collection
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Install openstack.cloud collection
+      ansible.builtin.shell:
+        cmd: "ansible-galaxy collection install openstack.cloud"
+
+#Play 2: Deploy three networks
+- name: Create Networks
+  hosts: localhost
+  gather_facts: no
+
+  tasks: 
+    - name: Create network 1 (net1) 
+      os_network:
+        name: "arn_net1" 
+        state: present
+        port_security_enabled: false #NEEDED TO BE ABLE TO SPOOF MACS AND IPS
+      register: network1_result #cache the information about the network for future use 
+
+    - name: Create subnet 1
+      os_subnet:
+        state: present
+        network_name: "arn_net1"
+        name: "arn_subnet1"
+        cidr: "192.168.1.0/24"
+      register: subnet1_result
+
+    - name: Create network 2 (net2)
+      os_network:
+        name: "arn_net2"
+        state: present
+        port_security_enabled: false
+      register: network2_result #cache the information about the network for future use 
+
+    - name: Create subnet 2
+      os_subnet:
+        state: present
+        network_name: "arn_net2"
+        name: "arn_subnet2"
+        cidr: "192.168.2.0/24"
+      register: subnet2_result
+
+    - name: Create network 3 (net 3)
+      os_network:
+        name: "arn_net3"
+        state: present
+        port_security_enabled: false
+      register: network3_result #cache the information about the network for future use 
+
+    - name: Create subnet 3
+      os_subnet:
+        state: present
+        network_name: "arn_net3"
+        name: "arn_subnet3"
+        cidr: "192.168.3.0/24"
+      register: subnet3_result
+
+    - name: Get network 1 ID 
+      set_fact:
+        network1_id: "{{ network1_result.id }}"
+    
+    - name: Get subnet1 ID
+      set_fact:
+        subnet1_id: "{{ subnet1_result.id}}"
+    
+    - name: Get network 2 ID 
+      set_fact:
+        network2_id: "{{ network2_result.id }}"
+
+    - name: Get subnet2 ID
+      set_fact:
+        subnet2_id: "{{ subnet2_result.id}}"
+    
+    - name: Get network 3 ID
+      set_fact:
+        network3_id: "{{ network3_result.id }}"
+
+    - name: Get subnet3 ID
+      set_fact:
+        subnet3_id: "{{ subnet3_result.id}}"
+    
+#Play 3: Deploy pfSense Router
+- name: Deploy pfSense
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Create pfSense instance 
+      command: >
+        openstack server create
+        --flavor medium
+        --image PFsense-2.6.0-Cloudinit
+        --boot-from-volume 100
+        --nic net-id={{ network1_id }},v4-fixed-ip="192.168.1.254"
+        --nic net-id={{ network2_id }},v4-fixed-ip="192.168.2.254"
+        --nic net-id={{ network3_id }},v4-fixed-ip="192.168.3.254"
+        --key-name pfSense_network
+        pfSense
+      ignore_errors: yes
+  
+#Play 4: deploy test machines
+- name: deploy test instances on each network
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Create box 1 on net 1 #CHANGE TO MATCH YOUR INFRASTRUCTURE (image, key, etc)
+      command: >
+        openstack server create
+        --flavor small
+        --image  UbuntuJammy2204-Desktop
+        --boot-from-volume 100
+        --nic net-id={{ network1_id }},v4-fixed-ip="192.168.1.10" 
+        --key-name pfSense_network 
+        net1_box
+      ignore_errors: yes # will continue running if any of the deployments fail 
+    
+    - name: Create box 2 on net 2 #CHANGE TO MATCH YOUR INFRASTRUCTURE (image, key, etc)
+      command: >
+        openstack server create
+        --flavor small
+        --image  UbuntuJammy2204-Desktop
+        --boot-from-volume 100
+        --nic net-id={{ network2_id }},v4-fixed-ip="192.168.2.10" 
+        --key-name pfSense_network 
+        net2_box
+      ignore_errors: yes # will continue running if any of the deployments fail 
+
+    - name: Create box 3 on net 3 #CHANGE TO MATCH YOUR INFRASTRUCTURE (image, key, etc)
+      command: >
+        openstack server create
+        --flavor small
+        --image  UbuntuJammy2204-Desktop
+        --boot-from-volume 100
+        --nic net-id={{ network3_id }},v4-fixed-ip="192.168.3.10" 
+        --key-name pfSense_network 
+        net3_box
+      ignore_errors: yes # will continue running if any of the deployments fail 
+
+
+
+#Play 5: configure deploy box to talk to machines
+- name: Configure Deploy Box
+  hosts: localhost
+  gather_facts: no
+  ignore_errors: yes
+
+  vars:
+    Deploy_Box_ID : "74db95d8-b933-442b-8250-f00d74f049ee" #CHANGE TO MATCH YOUR INSTANCE ID
+
+  tasks:
+    - name: Create port for net 1
+      ansible.builtin.shell:
+        cmd: "openstack port create --network {{ network1_id }} --fixed-ip subnet={{ subnet1_id }},ip-address=192.168.1.253 --format json net1"
+      register: port1_creation_result
+      changed_when: false
+
+    - name: Parse port1 ID from output
+      set_fact:
+        port1_id: "{{ (port1_creation_result.stdout | from_json).id }}"
+
+    - name: Attach port1 to instance
+      ansible.builtin.shell:
+        cmd: "openstack server add port {{ Deploy_Box_ID }} {{ port1_id }}"  
+
+    - name: Create port for net 2
+      ansible.builtin.shell:
+        cmd: "openstack port create --network {{ network2_id }} --fixed-ip subnet={{ subnet2_id }},ip-address=192.168.2.253 --format json net2"
+      register: port2_creation_result
+      changed_when: false
+
+    - name: Parse port2 ID from output
+      set_fact:
+        port2_id: "{{ (port2_creation_result.stdout | from_json).id }}"
+
+    - name: Attach port2 for net 2
+      ansible.builtin.shell:
+        cmd: "openstack server add port {{ Deploy_Box_ID }} {{ port2_id }}"  
+
+    - name: Create a new port for net 3
+      ansible.builtin.shell:
+        cmd: "openstack port create --network {{ network3_id }} --fixed-ip subnet={{ subnet3_id }},ip-address=192.168.3.253 --format json net3"
+      register: port3_creation_result
+      changed_when: false
+
+    - name: Parse port3 ID from output
+      set_fact:
+        port3_id: "{{ (port3_creation_result.stdout | from_json).id }}"
+
+    - name: Attach port3 to instance
+      ansible.builtin.shell:
+        cmd: "openstack server add port {{ Deploy_Box_ID }} {{ port3_id }}"  
+
+    - name: pause for 30 seconds #gives all the machines time to fully spin up before we begin configurating them 
+      pause: 
+        seconds: 30
+
+
+#play 6: change default routes on all hosts to be x.x.x.254 to allow routing through pfSense
+- name: set default gateway to x.x.x.254
+  hosts: all
+  gather_facts: yes
+  become: true
+
+  tasks:
+    - name: set net1_box
+      ansible.builtin.shell:
+        cmd: "ip route add default via 192.168.1.254"
+      when: "'192.168.1.10' in inventory_hostname"
+
+    - name: set net2 box
+      ansible.builtin.shell:
+        cmd: "ip route add default via 192.168.2.254"
+      when: "'192.168.2.10' in inventory_hostname"
+
+    - name: set net3 box
+      ansible.builtin.shell:
+        cmd: "ip route add default via 192.168.3.254"
+      when: "'192.168.3.10' in inventory_hostname"
+
+#play 7: clean up deployment box, remove ports to main networks
+
+- name:  clean up deployment box and connect it to the router 
+  hosts: localhost
+  gather_facts: no
+  vars:
+    Deploy_Box_ID : "74db95d8-b933-442b-8250-f00d74f049ee" #CHANGE TO MATCH YOUR INSTANCE ID
+
+  tasks:
+
+    - name: Delete net1 port from openstack
+      ansible.builtin.shell:
+        cmd: "openstack port delete {{ port1_id }}"
+
+    - name: Delete net2 port from openstack
+      ansible.builtin.shell:
+        cmd: "openstack port delete {{ port2_id }}"
+
+    - name: Delete net3 port from openstack
+      ansible.builtin.shell:
+        cmd: "openstack port delete {{ port3_id }}"
+
+#play 8: add internet to the network
+
+- name:  Add router with internet to WAN network
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: create router 
+      os_router:
+        state: present
+        name: "WAN_Internet_Router"
+        external_gateway_info: #external gateway is a port the router is built upon. 
+          network: "external249" #external 249 is the open internet 
+        interfaces: #used to set other interfaces on the router for internal routing between the networks we just created 
+          - net: "arn_net1"  # connect network one 
+            subnet: "arn_subnet1" 
+
+
+  
