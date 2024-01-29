@@ -8,7 +8,8 @@ This README provides instructions for setting up and configuring a pfSense route
 - Openstack CLI and Ansible downloaded on deployment box.
 
 ## Instructions
-1. Run the script with the supplied inventory file:
+1. Ensure that all variables in the script match your specific environment. This includes image type, resource allocation size, and most importantly, deployment key.
+2. Run the script with the supplied inventory file:
     ```
     ansible-playbook -i pfSense_network_inventory.ini pfSense_network.yml
     ```
